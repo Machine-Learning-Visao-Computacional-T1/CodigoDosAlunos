@@ -1,0 +1,20 @@
+# IDEs
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Dados e Modelos (Exemplos)
+*.csv
+*.xlsx
+*.pkl
+*.joblib
+
+# Logs
+*.log
