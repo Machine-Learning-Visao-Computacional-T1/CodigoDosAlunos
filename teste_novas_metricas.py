@@ -1,0 +1,575 @@
+# ==============================================================================
+# LABORATÓRIO PRÁTICO: MACHINE LEARNING & VERSIONAMENTO
+# Objetivo:
+# Prever se um vinho é "Bom" ou "Ruim" baseado na sua composição química.
+#
+# FOCO DESSE ARQUIVO:
+# - Código DIDÁTICO
+# - Fácil de modificar
+# - Modular
+# - Cada melhoria pode ser ativada/desativada individualmente
+# - Ideal para testes práticos e Pull Requests
+# ==============================================================================
+
+# ==============================================================================
+# IMPORTS
+# ==============================================================================
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Separação treino/teste
+from sklearn.model_selection import train_test_split
+
+# Cross Validation
+from sklearn.model_selection import cross_val_score
+
+# Busca automática de hiperparâmetros
+from sklearn.model_selection import GridSearchCV
+
+# Modelo principal
+from sklearn.ensemble import RandomForestClassifier
+
+# Métricas
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    ConfusionMatrixDisplay,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score
+)
+
+# Escalonamento (útil para outros modelos futuramente)
+from sklearn.preprocessing import StandardScaler
+
+# ==============================================================================
+# CONFIGURAÇÕES GERAIS
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# DEFINIÇÃO DA CLASSE ALVO
+#
+# Aqui definimos o que é um vinho "Bom".
+#
+# Atualmente:
+# quality >= 6 -> BOM
+#
+# TESTES INTERESSANTES:
+# >= 7  -> problema mais difícil
+# >= 5  -> problema mais fácil
+# ------------------------------------------------------------------------------
+
+NOTA_MINIMA_VINHO_BOM = 7
+
+# ------------------------------------------------------------------------------
+# TAMANHO DO TESTE
+#
+# 0.20 = 20% dos dados vão para teste
+#
+# MAIS TESTE:
+# + avaliação mais confiável
+# - menos dados para treino
+#
+# MENOS TESTE:
+# + mais dados para treino
+# - avaliação menos confiável
+# ------------------------------------------------------------------------------
+
+TEST_SIZE = 0.20
+
+# ------------------------------------------------------------------------------
+# RANDOM STATE
+#
+# Mantém resultados reproduzíveis.
+#
+# IMPORTANTÍSSIMO em:
+# - Machine Learning
+# - Ciência de Dados
+# - Versionamento
+# - Comparação de experimentos
+# ------------------------------------------------------------------------------
+
+RANDOM_STATE = 42
+
+# ==============================================================================
+# CONTROLES DE FUNCIONALIDADES
+#
+# Você pode ativar/desativar funcionalidades sem quebrar o código.
+#
+# True  -> funcionalidade ativa
+# False -> funcionalidade desativada
+# ==============================================================================
+
+USAR_STRATIFY = True
+USAR_ESCALONAMENTO = True
+USAR_FEATURE_ENGINEERING = False
+USAR_CROSS_VALIDATION = True
+USAR_GRID_SEARCH = True
+
+# ==============================================================================
+# CONFIGURAÇÕES DO RANDOM FOREST
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# n_estimators
+#
+# Quantidade de árvores da floresta.
+#
+# MAIS árvores:
+# + melhor precisão
+# + mais estabilidade
+# - mais lento
+# ------------------------------------------------------------------------------
+
+NUMERO_DE_ARVORES = 200
+
+# ------------------------------------------------------------------------------
+# max_depth
+#
+# Limita profundidade das árvores.
+#
+# Evita OVERFITTING.
+#
+# None -> sem limite
+# Valores menores -> modelo mais generalista
+# ------------------------------------------------------------------------------
+
+MAX_DEPTH = 15
+
+# ------------------------------------------------------------------------------
+# min_samples_split
+#
+# Número mínimo de amostras para dividir um nó.
+#
+# Valores maiores:
+# + menos overfitting
+# - menos sensível a padrões pequenos
+# ------------------------------------------------------------------------------
+
+MIN_SAMPLES_SPLIT = 5
+
+# ------------------------------------------------------------------------------
+# min_samples_leaf
+#
+# Quantidade mínima de amostras em uma folha final.
+#
+# Excelente para reduzir overfitting.
+# ------------------------------------------------------------------------------
+
+MIN_SAMPLES_LEAF = 2
+
+# ------------------------------------------------------------------------------
+# max_features
+#
+# Quantidade de features usadas por árvore.
+#
+# 'sqrt' -> padrão muito utilizado
+#
+# Ajuda a criar diversidade entre árvores.
+# ------------------------------------------------------------------------------
+
+MAX_FEATURES = 'sqrt'
+
+# ------------------------------------------------------------------------------
+# class_weight
+#
+# Compensa desbalanceamento entre classes.
+#
+# 'balanced' -> ajusta pesos automaticamente
+# ------------------------------------------------------------------------------
+
+CLASS_WEIGHT = 'balanced'
+
+# ------------------------------------------------------------------------------
+# n_jobs
+#
+# Quantos núcleos do processador serão usados.
+#
+# -1 -> usa TODOS os núcleos disponíveis
+# ------------------------------------------------------------------------------
+
+N_JOBS = -1
+
+# ==============================================================================
+# CARREGAMENTO DOS DADOS
+# ==============================================================================
+
+print("Baixando base de dados...")
+
+url = "https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv"
+
+df = pd.read_csv(url, sep=';')
+
+# ==============================================================================
+# CRIAÇÃO DA CLASSE ALVO
+# ==============================================================================
+
+df['classificacao'] = [
+    1 if nota >= NOTA_MINIMA_VINHO_BOM else 0
+    for nota in df['quality']
+]
+
+# ==============================================================================
+# FEATURE ENGINEERING (OPCIONAL)
+#
+# Criação de novas variáveis derivadas.
+#
+# Muitas vezes melhora MAIS o modelo do que trocar algoritmo.
+# ==============================================================================
+
+if USAR_FEATURE_ENGINEERING:
+
+    print("Aplicando Feature Engineering...")
+
+    # --------------------------------------------------------------------------
+    # Exemplo:
+    # Soma de acidez fixa + volátil
+    # --------------------------------------------------------------------------
+
+    df['acidez_total'] = (
+        df['fixed acidity'] +
+        df['volatile acidity']
+    )
+
+    # --------------------------------------------------------------------------
+    # Exemplo:
+    # Relação álcool/acidez
+    # --------------------------------------------------------------------------
+
+    df['alcool_por_acidez'] = (
+        df['alcohol'] /
+        (df['fixed acidity'] + 0.0001)
+    )
+
+# ==============================================================================
+# SEPARAÇÃO DE FEATURES E TARGET
+# ==============================================================================
+
+X = df.drop(['quality', 'classificacao'], axis=1)
+y = df['classificacao']
+
+# ==============================================================================
+# TRAIN TEST SPLIT
+# ==============================================================================
+
+print("Separando dados de treino e teste...")
+
+# ------------------------------------------------------------------------------
+# stratify=y
+#
+# Mantém proporção de classes igual entre treino e teste.
+#
+# MUITO IMPORTANTE em classificação.
+# ------------------------------------------------------------------------------
+
+if USAR_STRATIFY:
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=TEST_SIZE,
+        random_state=RANDOM_STATE,
+        stratify=y
+    )
+
+else:
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=TEST_SIZE,
+        random_state=RANDOM_STATE
+    )
+
+# ==============================================================================
+# ESCALONAMENTO (OPCIONAL)
+#
+# Random Forest NÃO precisa muito.
+#
+# Mas isso é útil para:
+# - SVM
+# - Redes Neurais
+# - Regressão Logística
+# ==============================================================================
+
+if USAR_ESCALONAMENTO:
+
+    print("Aplicando escalonamento...")
+
+    scaler = StandardScaler()
+
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+
+# ==============================================================================
+# CRIAÇÃO DO MODELO
+# ==============================================================================
+
+modelo = RandomForestClassifier(
+
+    # Quantidade de árvores
+    n_estimators=NUMERO_DE_ARVORES,
+
+    # Limite de profundidade
+    max_depth=MAX_DEPTH,
+
+    # Mínimo para dividir nós
+    min_samples_split=MIN_SAMPLES_SPLIT,
+
+    # Mínimo de amostras por folha
+    min_samples_leaf=MIN_SAMPLES_LEAF,
+
+    # Quantidade de features por árvore
+    max_features=MAX_FEATURES,
+
+    # Balanceamento automático
+    class_weight=CLASS_WEIGHT,
+
+    # Uso de múltiplos núcleos
+    n_jobs=N_JOBS,
+
+    # Reprodutibilidade
+    random_state=RANDOM_STATE
+)
+
+# ==============================================================================
+# CROSS VALIDATION (OPCIONAL)
+#
+# Avalia o modelo várias vezes com diferentes divisões.
+#
+# Muito mais confiável do que apenas um teste simples.
+# ==============================================================================
+
+if USAR_CROSS_VALIDATION:
+
+    print("\nExecutando Cross Validation...")
+
+    scores = cross_val_score(
+        modelo,
+        X,
+        y,
+        cv=5,
+        scoring='accuracy'
+    )
+
+    print(f"Scores individuais: {scores}")
+    print(f"Média CV: {scores.mean():.4f}")
+
+# ==============================================================================
+# GRID SEARCH (OPCIONAL)
+#
+# Busca automática pelos melhores hiperparâmetros.
+#
+# Pode demorar dependendo do tamanho da busca.
+# ==============================================================================
+
+if USAR_GRID_SEARCH:
+
+    print("\nExecutando Grid Search...")
+
+    parametros = {
+
+        'n_estimators': [50, 100, 200],
+
+        'max_depth': [5, 10, None],
+
+        'min_samples_leaf': [1, 2, 4]
+    }
+
+    grid_search = GridSearchCV(
+
+        estimator=modelo,
+
+        param_grid=parametros,
+
+        cv=3,
+
+        scoring='accuracy',
+
+        n_jobs=-1
+    )
+
+    grid_search.fit(X_train, y_train)
+
+    print("\nMelhores parâmetros encontrados:")
+    print(grid_search.best_params_)
+
+    modelo = grid_search.best_estimator_
+
+# ==============================================================================
+# TREINAMENTO
+# ==============================================================================
+
+print("\nTreinando modelo...")
+
+modelo.fit(X_train, y_train)
+
+# ==============================================================================
+# PREVISÕES
+# ==============================================================================
+
+print("Realizando previsões...")
+
+previsoes = modelo.predict(X_test)
+
+# Probabilidades (necessárias para ROC AUC)
+probabilidades = modelo.predict_proba(X_test)[:, 1]
+
+# ==============================================================================
+# MÉTRICAS
+# ==============================================================================
+
+print("\n" + "=" * 60)
+print("MÉTRICAS DO MODELO")
+print("=" * 60)
+
+# ------------------------------------------------------------------------------
+# Accuracy
+#
+# Percentual geral de acertos.
+# ------------------------------------------------------------------------------
+
+accuracy = accuracy_score(y_test, previsoes)
+
+print(f"\nAccuracy: {accuracy:.4f}")
+
+# ------------------------------------------------------------------------------
+# Precision
+#
+# Das previsões positivas,
+# quantas realmente eram positivas.
+# ------------------------------------------------------------------------------
+
+precision = precision_score(y_test, previsoes)
+
+print(f"Precision: {precision:.4f}")
+
+# ------------------------------------------------------------------------------
+# Recall
+#
+# Quantos positivos reais o modelo encontrou.
+# ------------------------------------------------------------------------------
+
+recall = recall_score(y_test, previsoes)
+
+print(f"Recall: {recall:.4f}")
+
+# ------------------------------------------------------------------------------
+# F1 Score
+#
+# Média harmônica entre Precision e Recall.
+#
+# Excelente métrica geral.
+# ------------------------------------------------------------------------------
+
+f1 = f1_score(y_test, previsoes)
+
+print(f"F1-Score: {f1:.4f}")
+
+# ------------------------------------------------------------------------------
+# ROC AUC
+#
+# Mede capacidade separatória do modelo.
+#
+# Muito importante em classificação binária.
+# ------------------------------------------------------------------------------
+
+roc_auc = roc_auc_score(y_test, probabilidades)
+
+print(f"ROC AUC: {roc_auc:.4f}")
+
+# ==============================================================================
+# RELATÓRIO COMPLETO
+# ==============================================================================
+
+print("\n" + "=" * 60)
+print("RELATÓRIO DE CLASSIFICAÇÃO")
+print("=" * 60)
+
+print(classification_report(y_test, previsoes))
+
+# ==============================================================================
+# MATRIZ DE CONFUSÃO
+# ==============================================================================
+
+print("\nExibindo matriz de confusão...")
+
+disp = ConfusionMatrixDisplay.from_predictions(
+
+    y_test,
+
+    previsoes,
+
+    display_labels=['Ruim (0)', 'Bom (1)'],
+
+    cmap=plt.cm.Blues
+)
+
+plt.title("Matriz de Confusão")
+
+plt.show()
+
+# ==============================================================================
+# IMPORTÂNCIA DAS FEATURES
+#
+# Mostra quais variáveis mais influenciam o modelo.
+#
+# Excelente para análise e interpretação.
+# ==============================================================================
+
+print("\n" + "=" * 60)
+print("IMPORTÂNCIA DAS FEATURES")
+print("=" * 60)
+
+importancias = pd.DataFrame({
+
+    'Feature': X.columns,
+
+    'Importancia': modelo.feature_importances_
+})
+
+importancias = importancias.sort_values(
+    by='Importancia',
+    ascending=False
+)
+
+print(importancias)
+
+# ==============================================================================
+# TESTES PRÁTICOS
+# ==============================================================================
+#
+# TESTE 1:
+# Alterar NUMERO_DE_ARVORES
+#
+# TESTE 2:
+# Alterar MAX_DEPTH
+#
+# TESTE 3:
+# Desativar STRATIFY
+#
+# TESTE 4:
+# Ativar FEATURE_ENGINEERING
+#
+# TESTE 5:
+# Ativar GRID_SEARCH
+#
+# TESTE 6:
+# Alterar definição de vinho bom
+#
+# TESTE 7:
+# Comparar Accuracy vs F1 Score
+#
+# TESTE 8:
+# Comparar Cross Validation ligado/desligado
+#
+# TESTE 9:
+# Alterar min_samples_leaf
+#
+# TESTE 10:
+# Remover features manualmente
+#
+# ==============================================================================
